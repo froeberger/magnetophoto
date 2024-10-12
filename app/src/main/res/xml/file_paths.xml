@@ -1,16 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<paths xmlns:android="http://schemas.android.com/apk/res/android">
+<paths>
     <cache-path
         name="images"
         path="images/" />
-
-    <!-- If you need to share files from the internal files directory -->
-    <files-path
-        name="internal_files"
-        path="." />
-
-    <!-- If you need to share files from external storage specific to your app -->
-    <external-files-path
-        name="external_files"
-        path="." />
 </paths>

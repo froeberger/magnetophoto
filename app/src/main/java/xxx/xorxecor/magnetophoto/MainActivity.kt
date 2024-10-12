@@ -90,111 +90,111 @@ class MainActivity : ComponentActivity(), SensorEventListener {
     override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {
         // Not used in this example
     }
+}
 
 
-    @Composable
-    fun MagnetoColorizerApp(
-        magneticField: FloatArray,
-        modifier: Modifier = Modifier
-    ) {
-        var imageUri by remember { mutableStateOf<Uri?>(null) }
-        val context = LocalContext.current
-        val scope = rememberCoroutineScope()
+
+@Composable
+fun MagnetoColorizerApp(
+    magneticField: FloatArray,
+    modifier: Modifier = Modifier
+) {
+    var imageUri by remember { mutableStateOf<Uri?>(null) }
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
 
 
-        // Launcher to take a picture and save it to the provided Uri
-        val cameraLauncher = rememberLauncherForActivityResult(
-            ActivityResultContracts.TakePicture()
-        ) { success: Boolean ->
-            if (success) {
-                // Image captured successfully
-                if (BuildConfig.DEBUG) {
-                    Log.d("MagnetoColorizerApp", "Image captured successfully: $imageUri")
-                }
-            } else {
-                // Handle capture failure
-                if (BuildConfig.DEBUG) {
-                    Log.e("MagnetoColorizerApp", "Image capture failed")
-                }
+    // Launcher to take a picture and save it to the provided Uri
+    val cameraLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.TakePicture()
+    ) { success: Boolean ->
+        if (success) {
+            // Image captured successfully
+            if (BuildConfig.DEBUG) {
+                Log.d("MagnetoColorizerApp", "Image captured successfully: $imageUri")
             }
-        }
-
-
-        // Function to generate Uri and launch camera
-        fun launchCamera() {
-            scope.launch(Dispatchers.IO) {
-                imageUri = ComposeFileProvider.getImageUri(context)
-            }.invokeOnCompletion {
-                imageUri?.let { uri ->
-                    cameraLauncher.launch(uri)
-                }
-            }
-        }
-
-        // Launcher to request camera permission
-        val cameraPermissionLauncher = rememberLauncherForActivityResult(
-            ActivityResultContracts.RequestPermission()
-        ) { isGranted: Boolean ->
-            if (isGranted) {
-                // Permission granted, launch camera
-                launchCamera()
-            } else {
-                // Handle permission denied
-                if (BuildConfig.DEBUG) {
-                    Log.e("MagnetoColorizerApp", "Camera permission denied")
-                }
-            }
-        }
-
-
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(16.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
-        ) {
-            Button(
-                onClick = {
-                    when (PackageManager.PERMISSION_GRANTED) {
-                        ContextCompat.checkSelfPermission(
-                            context,
-                            Manifest.permission.CAMERA
-                        ) -> {
-                            // Permission already granted, launch camera
-                            scope.launch(Dispatchers.IO) {
-                                imageUri = ComposeFileProvider.getImageUri(context)
-                            }.invokeOnCompletion {
-                                imageUri?.let { it1 -> cameraLauncher.launch(it1) }
-                            }
-                        }
-
-                        else -> {
-                            // Request permission
-                            cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
-                        }
-                    }
-                }
-            ) {
-                Text("Take Photo")
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            imageUri?.let { uri ->
-                Image(
-                    painter = rememberImagePainter(uri),
-                    contentDescription = "Captured image",
-                    modifier = Modifier.size(300.dp),
-                    colorFilter = ColorFilter.colorMatrix(
-                        ColorMatrix().apply {
-                            setToSaturation(magneticField[0] / 100f)
-                            // You can use magneticField[1] and magneticField[2] for other color adjustments
-                        }
-                    )
-                )
+        } else {
+            // Handle capture failure
+            if (BuildConfig.DEBUG) {
+                Log.e("MagnetoColorizerApp", "Image capture failed")
             }
         }
     }
-}
 
+
+    // Function to generate Uri and launch camera
+    fun launchCamera() {
+        scope.launch(Dispatchers.IO) {
+            imageUri = ComposeFileProvider.getImageUri(context)
+        }.invokeOnCompletion {
+            imageUri?.let { uri ->
+                cameraLauncher.launch(uri)
+            }
+        }
+    }
+
+    // Launcher to request camera permission
+    val cameraPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { isGranted: Boolean ->
+        if (isGranted) {
+            // Permission granted, launch camera
+            launchCamera()
+        } else {
+            // Handle permission denied
+            if (BuildConfig.DEBUG) {
+                Log.e("MagnetoColorizerApp", "Camera permission denied")
+            }
+        }
+    }
+
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Button(
+            onClick = {
+                when (PackageManager.PERMISSION_GRANTED) {
+                    ContextCompat.checkSelfPermission(
+                        context,
+                        Manifest.permission.CAMERA
+                    ) -> {
+                        // Permission already granted, launch camera
+                        scope.launch(Dispatchers.IO) {
+                            imageUri = ComposeFileProvider.getImageUri(context)
+                        }.invokeOnCompletion {
+                            imageUri?.let { it1 -> cameraLauncher.launch(it1) }
+                        }
+                    }
+
+                    else -> {
+                        // Request permission
+                        cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+                    }
+                }
+            }
+        ) {
+            Text("Take Photo")
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        imageUri?.let { uri ->
+            Image(
+                painter = rememberImagePainter(uri),
+                contentDescription = "Captured image",
+                modifier = Modifier.size(300.dp),
+                colorFilter = ColorFilter.colorMatrix(
+                    ColorMatrix().apply {
+                        setToSaturation(magneticField[0] / 100f)
+                        // You can use magneticField[1] and magneticField[2] for other color adjustments
+                    }
+                )
+            )
+        }
+    }
+}
