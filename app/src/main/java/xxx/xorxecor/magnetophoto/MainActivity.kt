@@ -2,6 +2,8 @@ package xxx.xorxecor.magnetophoto
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
@@ -33,15 +35,15 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.ColorFilter
-import androidx.compose.ui.graphics.ColorMatrix
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
-import coil.compose.rememberImagePainter
+import androidx.core.graphics.toColor
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import xxx.xorxecor.magnetophoto.ui.theme.MagnetophotoTheme
+import java.io.InputStream
 
 class MainActivity : ComponentActivity(), SensorEventListener {
     private lateinit var sensorManager: SensorManager
@@ -99,39 +101,77 @@ fun MagnetoColorizerApp(
     magneticField: FloatArray,
     modifier: Modifier = Modifier
 ) {
-    var imageUri by remember { mutableStateOf<Uri?>(null) }
+    var originalImageUri by remember { mutableStateOf<Uri?>(null) }
+    var colorizedImageUri by remember { mutableStateOf<Uri?>(null) }
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
+    // Function to load bitmap from Uri
+    fun loadBitmapFromUri(context: android.content.Context, uri: Uri): Bitmap? {
+        return try {
+            val inputStream: InputStream? = context.contentResolver.openInputStream(uri)
+            BitmapFactory.decodeStream(inputStream)
+        } catch (e: Exception) {
+            Log.e("MagnetoColorizerApp", "Failed to load bitmap from Uri: $uri", e)
+            null
+        }
+    }
 
-    // Launcher to take a picture and save it to the provided Uri
+
+    fun mapZAxisToColor(zValue: Float): android.graphics.Color {
+        // Example mapping: blue to red based on zValue
+        // Adjust the mapping logic as per your requirements
+        val normalizedZ = ((zValue + 100f) / 200f).coerceIn(0f, 1f) // Normalize to [0,1]
+        val red = (normalizedZ * 255).toInt()
+        val blue = ((1f - normalizedZ) * 255).toInt()
+        return android.graphics.Color.rgb(red, 0, blue).toColor()
+    }
+
+    // Function to colorize the bitmap
+    fun colorizeBitmap(originalBitmap: Bitmap, color: android.graphics.Color): Bitmap {
+        val bitmap = originalBitmap.copy(Bitmap.Config.ARGB_8888, true)
+        val canvas = android.graphics.Canvas(bitmap)
+        val paint = android.graphics.Paint()
+        val colorFilter = android.graphics.PorterDuffColorFilter(color.toArgb(), android.graphics.PorterDuff.Mode.SRC_ATOP)
+        paint.colorFilter = colorFilter
+        canvas.drawBitmap(bitmap, 0f, 0f, paint)
+        return bitmap
+    }
+
     val cameraLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.TakePicture()
     ) { success: Boolean ->
         if (success) {
-            // Image captured successfully
-            if (BuildConfig.DEBUG) {
-                Log.d("MagnetoColorizerApp", "Image captured successfully: $imageUri")
+            originalImageUri?.let { uri ->
+                // Load the bitmap from the Uri
+                val bitmap = loadBitmapFromUri(context, uri)
+                bitmap?.let {
+                    // Map z-axis to color
+                    val color = mapZAxisToColor(magneticField.getOrElse(2) { 0f })
+
+                    // Colorize the bitmap
+                    val colorizedBitmap = colorizeBitmap(it, color)
+
+                    // Save the colorized bitmap to a new Uri
+                    colorizedImageUri = ComposeFileProvider.saveBitmapToUri(context, colorizedBitmap)
+                }
             }
         } else {
-            // Handle capture failure
-            if (BuildConfig.DEBUG) {
-                Log.e("MagnetoColorizerApp", "Image capture failed")
-            }
+            Log.e("MagnetoColorizerApp", "Image capture failed")
         }
     }
 
 
-    // Function to generate Uri and launch camera
+    // Function to launch camera
     fun launchCamera() {
         scope.launch(Dispatchers.IO) {
-            imageUri = ComposeFileProvider.getImageUri(context)
-        }.invokeOnCompletion {
-            imageUri?.let { uri ->
+            originalImageUri = ComposeFileProvider.getImageUri(context)
+            originalImageUri?.let { uri ->
                 cameraLauncher.launch(uri)
             }
         }
     }
+
 
     // Launcher to request camera permission
     val cameraPermissionLauncher = rememberLauncherForActivityResult(
@@ -165,9 +205,9 @@ fun MagnetoColorizerApp(
                     ) -> {
                         // Permission already granted, launch camera
                         scope.launch(Dispatchers.IO) {
-                            imageUri = ComposeFileProvider.getImageUri(context)
+                            originalImageUri= ComposeFileProvider.getImageUri(context)
                         }.invokeOnCompletion {
-                            imageUri?.let { it1 -> cameraLauncher.launch(it1) }
+                            originalImageUri?.let { it1 -> cameraLauncher.launch(it1) }
                         }
                     }
 
@@ -183,17 +223,15 @@ fun MagnetoColorizerApp(
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        imageUri?.let { uri ->
+        Spacer(modifier = Modifier.height(16.dp))
+
+        colorizedImageUri?.let { uri ->
             Image(
-                painter = rememberImagePainter(uri),
-                contentDescription = "Captured image",
-                modifier = Modifier.size(300.dp),
-                colorFilter = ColorFilter.colorMatrix(
-                    ColorMatrix().apply {
-                        setToSaturation(magneticField[0] / 100f)
-                        // You can use magneticField[1] and magneticField[2] for other color adjustments
-                    }
-                )
+                bitmap = loadBitmapFromUri(context, uri)?.asImageBitmap() ?: return@let,
+                contentDescription = "Colorized Captured Image",
+                modifier = Modifier
+                    .size(300.dp)
+                    .padding(8.dp)
             )
         }
     }
