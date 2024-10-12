@@ -6,7 +6,6 @@ import android.net.Uri
 import androidx.core.content.FileProvider
 import java.io.File
 
-
 object ComposeFileProvider {
 
     fun getImageUri(context: Context): Uri {
