@@ -2,22 +2,35 @@ package xxx.xorxecor.magnetophoto
 
 import android.Manifest
 import android.content.pm.PackageManager
-import android.graphics.*
 import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
 import android.net.Uri
 import android.os.Bundle
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.layout.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.material3.Button
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.ColorFilter
@@ -33,7 +46,7 @@ import xxx.xorxecor.magnetophoto.ui.theme.MagnetophotoTheme
 class MainActivity : ComponentActivity(), SensorEventListener {
     private lateinit var sensorManager: SensorManager
     private var magnetometer: Sensor? = null
-    private var magneticField = floatArrayOf(0f, 0f, 0f)
+    private var magneticField by mutableStateOf(floatArrayOf(0f, 0f, 0f))
 
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -47,7 +60,10 @@ class MainActivity : ComponentActivity(), SensorEventListener {
         setContent {
             MagnetophotoTheme {
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
-                    MagnetoColorizerApp()
+                    MagnetoColorizerApp(
+                        magneticField = magneticField,
+                        modifier = Modifier.padding(innerPadding) // Apply innerPadding here
+                    )
                 }
             }
         }
@@ -77,34 +93,64 @@ class MainActivity : ComponentActivity(), SensorEventListener {
 
 
     @Composable
-    fun MagnetoColorizerApp() {
+    fun MagnetoColorizerApp(
+        magneticField: FloatArray,
+        modifier: Modifier = Modifier
+    ) {
         var imageUri by remember { mutableStateOf<Uri?>(null) }
         val context = LocalContext.current
         val scope = rememberCoroutineScope()
 
+
+        // Launcher to take a picture and save it to the provided Uri
         val cameraLauncher = rememberLauncherForActivityResult(
             ActivityResultContracts.TakePicture()
         ) { success: Boolean ->
             if (success) {
                 // Image captured successfully
+                if (BuildConfig.DEBUG) {
+                    Log.d("MagnetoColorizerApp", "Image captured successfully: $imageUri")
+                }
+            } else {
+                // Handle capture failure
+                if (BuildConfig.DEBUG) {
+                    Log.e("MagnetoColorizerApp", "Image capture failed")
+                }
             }
         }
 
+
+        // Function to generate Uri and launch camera
+        fun launchCamera() {
+            scope.launch(Dispatchers.IO) {
+                imageUri = ComposeFileProvider.getImageUri(context)
+            }.invokeOnCompletion {
+                imageUri?.let { uri ->
+                    cameraLauncher.launch(uri)
+                }
+            }
+        }
+
+        // Launcher to request camera permission
         val cameraPermissionLauncher = rememberLauncherForActivityResult(
             ActivityResultContracts.RequestPermission()
         ) { isGranted: Boolean ->
             if (isGranted) {
                 // Permission granted, launch camera
-                cameraLauncher.launch(null)
+                launchCamera()
             } else {
                 // Handle permission denied
+                if (BuildConfig.DEBUG) {
+                    Log.e("MagnetoColorizerApp", "Camera permission denied")
+                }
             }
         }
 
 
-
         Column(
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(16.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {

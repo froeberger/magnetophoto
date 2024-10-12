@@ -19,6 +19,13 @@ android {
     }
 
     buildTypes {
+        debug {
+            isMinifyEnabled = false
+            isShrinkResources = false
+            isDebuggable = true
+            isProfileable = false
+            multiDexEnabled = false
+        }
         release {
             isMinifyEnabled = false
             proguardFiles(
@@ -36,6 +43,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 }
 
