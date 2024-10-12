@@ -24,7 +24,7 @@ android {
             isShrinkResources = false
             isDebuggable = true
             isProfileable = false
-            multiDexEnabled = false
+            multiDexEnabled = true
         }
         release {
             isMinifyEnabled = false
@@ -32,6 +32,7 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            multiDexEnabled = true
         }
     }
     compileOptions {
