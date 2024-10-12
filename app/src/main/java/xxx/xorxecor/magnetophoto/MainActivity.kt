@@ -205,9 +205,9 @@ fun MagnetoColorizerApp(
                     ) -> {
                         // Permission already granted, launch camera
                         scope.launch(Dispatchers.IO) {
-                            originalImageUri= ComposeFileProvider.getImageUri(context)
+                            colorizedImageUri= ComposeFileProvider.getImageUri(context)
                         }.invokeOnCompletion {
-                            originalImageUri?.let { it1 -> cameraLauncher.launch(it1) }
+                            colorizedImageUri?.let { it1 -> cameraLauncher.launch(it1) }
                         }
                     }
 
