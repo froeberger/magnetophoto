@@ -19,7 +19,6 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.activity.result.contract.ActivityResultContracts.TakePicture
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -93,6 +92,33 @@ class MainActivity : ComponentActivity(), SensorEventListener2 {
     private var originalImageUri by mutableStateOf<Uri?>(null)
     private var colorizedImageUri by mutableStateOf<Uri?>(null)
 
+    // Launcher for capturing images
+    private val cameraLauncher = registerForActivityResult(ActivityResultContracts.TakePicture()) { success ->
+        if (success) {
+            originalImageUri?.let { uri ->
+                // Load the bitmap from the Uri
+                val bitmap = loadBitmapFromUri(this, uri)
+                bitmap?.let {
+                    // Map z-axis to color
+                    val color = mapZAxisToColor(gravityData.getOrElse(2) { 0f })
+
+                    // Colorize the bitmap
+                    val colorizedBitmap = colorizeBitmap(it, color.toColor())
+
+                    // Save the colorized bitmap to a new Uri
+                    colorizedImageUri = saveBitmapToUri(this, colorizedBitmap)
+
+                    // Update the UI with the colorized image
+                    activityScope.launch {
+                        _sensorDataFlow.emit("Color Code" to String.format("#%06X", 0xFFFFFF and color))
+                    }
+                }
+            }
+        } else {
+            Log.e("MainActivity", "Image capture failed")
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -109,6 +135,7 @@ class MainActivity : ComponentActivity(), SensorEventListener2 {
             } else {
                 // Handle permission denied
                 Log.e("MainActivity", "Camera permission denied")
+                // Optionally, inform the user with a Toast or Snackbar
             }
         }
 
@@ -124,6 +151,7 @@ class MainActivity : ComponentActivity(), SensorEventListener2 {
             } else {
                 // Handle permission denied
                 Log.e("MainActivity", "Location permissions denied")
+                // Optionally, inform the user with a Toast or Snackbar
             }
         }
 
@@ -145,7 +173,7 @@ class MainActivity : ComponentActivity(), SensorEventListener2 {
                     ) {
                         MagnetoColorizerApp(
                             colorizedImageUri = colorizedImageUri,
-                            onTakePhotoClick = { checkCameraPermission(cameraPermissionLauncher) }
+                            onTakePhotoClick = { launchCamera() } // Directly call launchCamera()
                         )
                     }
                 }
@@ -179,8 +207,8 @@ class MainActivity : ComponentActivity(), SensorEventListener2 {
             ambientLightSensor
         ).filterNotNull().forEach { sensor ->
             sensorManager.registerListener(this, sensor, SensorManager.SENSOR_DELAY_NORMAL)
-            sensorManager.flush(sensor)
         }
+        sensorManager.flush(this) // Correct: Passing SensorEventListener
     }
 
     private fun unregisterSensors() {
@@ -228,11 +256,6 @@ class MainActivity : ComponentActivity(), SensorEventListener2 {
 
         // Create the RGB color
         val color = android.graphics.Color.rgb(normalizedX, normalizedY, normalizedZ)
-
-        // Update your UI with the color
-        activityScope.launch {
-            _sensorDataFlow.emit("Color Code" to String.format("#%06X", 0xFFFFFF and color))
-        }
 
         // Update the state variable for background color
         currentPhotoColor = ComposeColor(color)
@@ -339,7 +362,7 @@ class MainActivity : ComponentActivity(), SensorEventListener2 {
         // For example, using FusedLocationProviderClient
     }
 
-    // Camera Launching Function
+    // Function to launch camera
     private fun launchCamera() {
         activityScope.launch(Dispatchers.IO) {
             originalImageUri = createImageUri(this@MainActivity)
@@ -366,28 +389,6 @@ class MainActivity : ComponentActivity(), SensorEventListener2 {
         } catch (e: Exception) {
             Log.e("MainActivity", "Failed to create image Uri", e)
             null
-        }
-    }
-
-    // RememberLauncher for TakePicture
-    private val cameraLauncher = registerForActivityResult(TakePicture()) { success ->
-        if (success) {
-            originalImageUri?.let { uri ->
-                // Load the bitmap from the Uri
-                val bitmap = loadBitmapFromUri(this, uri)
-                bitmap?.let {
-                    // Map z-axis to color
-                    val color = mapZAxisToColor(gravityData.getOrElse(2) { 0f })
-
-                    // Colorize the bitmap
-                    val colorizedBitmap = colorizeBitmap(it, color.toColor())
-
-                    // Save the colorized bitmap to a new Uri
-                    colorizedImageUri = saveBitmapToUri(this, colorizedBitmap)
-                }
-            }
-        } else {
-            Log.e("MainActivity", "Image capture failed")
         }
     }
 
@@ -430,7 +431,9 @@ class MainActivity : ComponentActivity(), SensorEventListener2 {
             val contentValues = ContentValues().apply {
                 put(MediaStore.MediaColumns.DISPLAY_NAME, "COLORIZED_${System.currentTimeMillis()}.jpg")
                 put(MediaStore.MediaColumns.MIME_TYPE, "image/jpeg")
-                put(MediaStore.MediaColumns.RELATIVE_PATH, "Pictures/MagnetoPhoto/Colorized")
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    put(MediaStore.MediaColumns.RELATIVE_PATH, "Pictures/MagnetoPhoto/Colorized")
+                }
             }
             val uri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, contentValues)
             uri?.let {
@@ -444,10 +447,6 @@ class MainActivity : ComponentActivity(), SensorEventListener2 {
             null
         }
     }
-}
-
-private fun SensorManager.flush(sensor: Sensor) {
-
 }
 
 @Composable
