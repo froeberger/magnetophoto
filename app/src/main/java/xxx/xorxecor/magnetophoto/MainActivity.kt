@@ -15,6 +15,7 @@ import android.os.Build
 import android.os.Bundle
 import android.provider.MediaStore
 import android.util.Log
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -96,26 +97,46 @@ class MainActivity : ComponentActivity(), SensorEventListener2 {
     private val cameraLauncher = registerForActivityResult(ActivityResultContracts.TakePicture()) { success ->
         if (success) {
             originalImageUri?.let { uri ->
-                // Load the bitmap from the Uri
-                val bitmap = loadBitmapFromUri(this, uri)
-                bitmap?.let {
-                    // Map z-axis to color
-                    val color = mapZAxisToColor(gravityData.getOrElse(2) { 0f })
+                // Launch a coroutine in the IO dispatcher for background processing
+                activityScope.launch(Dispatchers.IO) {
+                    // Load the bitmap from the Uri
+                    val bitmap = loadBitmapFromUri(this@MainActivity, uri)
+                    bitmap?.let {
+                        // Optional: Scale down the bitmap if it's too large
+                        val scaledBitmap = Bitmap.createScaledBitmap(it, it.width / 2, it.height / 2, true)
 
-                    // Colorize the bitmap
-                    val colorizedBitmap = colorizeBitmap(it, color.toColor())
+                        // Map z-axis to color
+                        val color = mapZAxisToColor(gravityData.getOrElse(2) { 0f })
 
-                    // Save the colorized bitmap to a new Uri
-                    colorizedImageUri = saveBitmapToUri(this, colorizedBitmap)
+                        // Colorize the bitmap
+                        val colorizedBitmap = colorizeBitmap(scaledBitmap, color.toColor())
 
-                    // Update the UI with the colorized image
-                    activityScope.launch {
-                        _sensorDataFlow.emit("Color Code" to String.format("#%06X", 0xFFFFFF and color))
+                        // Save the colorized bitmap to a new Uri
+                        val savedUri = saveBitmapToUri(this@MainActivity, colorizedBitmap)
+
+                        withContext(Dispatchers.Main) {
+                            // Update the UI with the colorized image
+                            colorizedImageUri = savedUri
+
+                            // Optionally, emit sensor data or notify the user
+                            activityScope.launch {
+                                _sensorDataFlow.emit("Color Code" to String.format("#%06X", 0xFFFFFF and color))
+                            }
+
+                            // Inform the user of success
+                            Toast.makeText(this@MainActivity, "Image colorized and saved successfully!", Toast.LENGTH_SHORT).show()
+                        }
+                    } ?: run {
+                        withContext(Dispatchers.Main) {
+                            Toast.makeText(this@MainActivity, "Failed to load the captured image.", Toast.LENGTH_SHORT).show()
+                        }
                     }
                 }
             }
         } else {
             Log.e("MainActivity", "Image capture failed")
+            // Inform the user about the failure
+            Toast.makeText(this, "Image capture failed.", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -135,7 +156,8 @@ class MainActivity : ComponentActivity(), SensorEventListener2 {
             } else {
                 // Handle permission denied
                 Log.e("MainActivity", "Camera permission denied")
-                // Optionally, inform the user with a Toast or Snackbar
+                // Inform the user
+                Toast.makeText(this, "Camera permission is required to take photos.", Toast.LENGTH_LONG).show()
             }
         }
 
@@ -151,7 +173,8 @@ class MainActivity : ComponentActivity(), SensorEventListener2 {
             } else {
                 // Handle permission denied
                 Log.e("MainActivity", "Location permissions denied")
-                // Optionally, inform the user with a Toast or Snackbar
+                // Inform the user
+                Toast.makeText(this, "Location permissions are required for enhanced features.", Toast.LENGTH_LONG).show()
             }
         }
 
@@ -208,7 +231,7 @@ class MainActivity : ComponentActivity(), SensorEventListener2 {
         ).filterNotNull().forEach { sensor ->
             sensorManager.registerListener(this, sensor, SensorManager.SENSOR_DELAY_NORMAL)
         }
-        sensorManager.flush(this) // Correct: Passing SensorEventListener
+        sensorManager.flush(this) // Corrected: Passing SensorEventListener instead of Sensor
     }
 
     private fun unregisterSensors() {
@@ -370,6 +393,10 @@ class MainActivity : ComponentActivity(), SensorEventListener2 {
                 withContext(Dispatchers.Main) {
                     cameraLauncher.launch(uri)
                 }
+            } ?: run {
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(this@MainActivity, "Failed to create image Uri.", Toast.LENGTH_SHORT).show()
+                }
             }
         }
     }
@@ -395,8 +422,9 @@ class MainActivity : ComponentActivity(), SensorEventListener2 {
     // Function to load bitmap from Uri
     private fun loadBitmapFromUri(context: Context, uri: Uri): Bitmap? {
         return try {
-            val inputStream = context.contentResolver.openInputStream(uri)
-            BitmapFactory.decodeStream(inputStream)
+            context.contentResolver.openInputStream(uri)?.use { inputStream ->
+                BitmapFactory.decodeStream(inputStream)
+            }
         } catch (e: IOException) {
             Log.e("MainActivity", "Failed to load bitmap from Uri: $uri", e)
             null
@@ -490,10 +518,12 @@ fun MagnetoColorizerApp(
 // Helper function to load bitmap from Uri
 fun loadBitmapFromUri(context: Context, uri: Uri): Bitmap? {
     return try {
-        val inputStream = context.contentResolver.openInputStream(uri)
-        BitmapFactory.decodeStream(inputStream)
+        context.contentResolver.openInputStream(uri)?.use { inputStream ->
+            BitmapFactory.decodeStream(inputStream)
+        }
     } catch (e: IOException) {
         Log.e("MagnetoColorizerApp", "Failed to load bitmap from Uri: $uri", e)
         null
     }
 }
+
