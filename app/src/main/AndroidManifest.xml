@@ -2,32 +2,32 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
-        <!-- Internet Permission -->
+    <!-- Declare necessary uses-feature for camera -->
     <uses-feature
         android:name="android.hardware.camera"
         android:required="true" />
+
+    <!-- Permissions -->
+
+    <!-- Camera Permission -->
+    <uses-permission android:name="android.permission.CAMERA" />
+
+    <!-- Internet Permissions -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
-        <!-- Network State Permission -->
-        <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
-    <uses-permission android:name="android.permission.SENSOR_MAGNETOMETER" />
+    <!-- Location Permissions -->
+    <!-- Required if using magnetometer data for location-based features -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
 
-        <!-- Location Permissions -->
-        <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
-        <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
-
-    <!-- Devices running Android 13 (API level 33) or higher -->
+    <!-- Media Permissions for API 33 (Android 13) -->
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
     <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
 
-    <!-- To handle the reselection within the app on devices running Android 14
-         or higher if your app targets Android 14 (API level 34) or higher.  -->
+    <!-- Media Permissions for API 34 (Android 14) -->
+    <!-- Only include if targeting API 34 and utilizing new media access features -->
     <uses-permission android:name="android.permission.READ_MEDIA_VISUAL_USER_SELECTED" />
-
-
-        <!-- Camera Permission -->
-        <uses-permission android:name="android.permission.CAMERA" />
-
 
     <application
         android:allowBackup="true"
@@ -38,7 +38,9 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.Magnetophoto"
-        tools:targetApi="34">
+        tools:targetApi="34"> <!-- Ensure tools:targetApi matches your target SDK -->
+
+        <!-- Main Activity -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -46,10 +48,11 @@
             android:theme="@style/Theme.Magnetophoto">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
-
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- FileProvider for handling image capture and storage -->
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"
