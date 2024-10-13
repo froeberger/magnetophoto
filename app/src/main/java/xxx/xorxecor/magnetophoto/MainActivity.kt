@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Canvas
 import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener2
@@ -44,7 +45,6 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
-import androidx.core.graphics.toColor
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -55,6 +55,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import xxx.xorxecor.magnetophoto.ui.theme.MagnetophotoTheme
 import java.io.IOException
+import android.graphics.Color as AndroidColor
+import android.graphics.Paint as AndroidPaint
 import androidx.compose.ui.graphics.Color as ComposeColor
 
 class MainActivity : ComponentActivity(), SensorEventListener2 {
@@ -67,17 +69,13 @@ class MainActivity : ComponentActivity(), SensorEventListener2 {
     private val linearAccelSensor by lazy { sensorManager.getDefaultSensor(Sensor.TYPE_LINEAR_ACCELERATION) }
     private val gyroscopeSensor by lazy { sensorManager.getDefaultSensor(Sensor.TYPE_GYROSCOPE) }
     private val rotationVectorSensor by lazy { sensorManager.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR) }
-    private val proximitySensor by lazy { sensorManager.getDefaultSensor(Sensor.TYPE_PROXIMITY) }
-    private val ambientLightSensor by lazy { sensorManager.getDefaultSensor(Sensor.TYPE_LIGHT) }
 
-    // Sensor data holders
-    private var gravityData = FloatArray(3)
-    private var magnetometerData = FloatArray(3)
-    private var linearAccelData = FloatArray(3)
-    private var gyroscopeData = FloatArray(3)
-    private var rotationVectorData = FloatArray(3)
-    private var proximityData = 0f
-    private var ambientLightData = 0f
+    // Sensor data holders (only z-axis)
+    private var gravityZ = 0f
+    private var magnetometerZ = 0f
+    private var linearAccelZ = 0f
+    private var gyroscopeZ = 0f
+    private var rotationVectorZ = 0f
 
     // MutableSharedFlow to emit sensor data
     private val _sensorDataFlow = MutableSharedFlow<Pair<String, String>>()
@@ -97,46 +95,41 @@ class MainActivity : ComponentActivity(), SensorEventListener2 {
     private val cameraLauncher = registerForActivityResult(ActivityResultContracts.TakePicture()) { success ->
         if (success) {
             originalImageUri?.let { uri ->
-                // Launch a coroutine in the IO dispatcher for background processing
+                // Load the bitmap from the Uri on a background thread
                 activityScope.launch(Dispatchers.IO) {
-                    // Load the bitmap from the Uri
                     val bitmap = loadBitmapFromUri(this@MainActivity, uri)
                     bitmap?.let {
-                        // Optional: Scale down the bitmap if it's too large
-                        val scaledBitmap = Bitmap.createScaledBitmap(it, it.width / 2, it.height / 2, true)
-
                         // Map z-axis to color
-                        val color = mapZAxisToColor(gravityData.getOrElse(2) { 0f })
+                        val color = mapZAxisToColor()
 
-                        // Colorize the bitmap
-                        val colorizedBitmap = colorizeBitmap(scaledBitmap, color.toColor())
+                        // Colorize the bitmap on a background thread
+                        val colorizedBitmap = colorizeBitmap(it, color)
 
-                        // Save the colorized bitmap to a new Uri
+                        // Save the colorized bitmap to a new Uri on a background thread
                         val savedUri = saveBitmapToUri(this@MainActivity, colorizedBitmap)
 
                         withContext(Dispatchers.Main) {
-                            // Update the UI with the colorized image
-                            colorizedImageUri = savedUri
-
-                            // Optionally, emit sensor data or notify the user
-                            activityScope.launch {
-                                _sensorDataFlow.emit("Color Code" to String.format("#%06X", 0xFFFFFF and color))
+                            if (savedUri != null) {
+                                colorizedImageUri = savedUri
+                                Toast.makeText(this@MainActivity, "Image colorized and saved.", Toast.LENGTH_SHORT).show()
+                            } else {
+                                Toast.makeText(this@MainActivity, "Failed to save colorized image.", Toast.LENGTH_SHORT).show()
                             }
-
-                            // Inform the user of success
-                            Toast.makeText(this@MainActivity, "Image colorized and saved successfully!", Toast.LENGTH_SHORT).show()
                         }
-                    } ?: run {
-                        withContext(Dispatchers.Main) {
-                            Toast.makeText(this@MainActivity, "Failed to load the captured image.", Toast.LENGTH_SHORT).show()
+
+                        // Update the UI with the color code
+                        activityScope.launch {
+                            _sensorDataFlow.emit("Color Code" to String.format("#%06X", 0xFFFFFF and color))
                         }
                     }
                 }
             }
         } else {
             Log.e("MainActivity", "Image capture failed")
-            // Inform the user about the failure
-            Toast.makeText(this, "Image capture failed.", Toast.LENGTH_SHORT).show()
+            // Inform the user
+            activityScope.launch(Dispatchers.Main) {
+                Toast.makeText(this@MainActivity, "Image capture failed.", Toast.LENGTH_SHORT).show()
+            }
         }
     }
 
@@ -174,7 +167,7 @@ class MainActivity : ComponentActivity(), SensorEventListener2 {
                 // Handle permission denied
                 Log.e("MainActivity", "Location permissions denied")
                 // Inform the user
-                Toast.makeText(this, "Location permissions are required for enhanced features.", Toast.LENGTH_LONG).show()
+                Toast.makeText(this, "Location permissions are required for certain features.", Toast.LENGTH_LONG).show()
             }
         }
 
@@ -225,9 +218,7 @@ class MainActivity : ComponentActivity(), SensorEventListener2 {
             magnetometerSensor,
             linearAccelSensor,
             gyroscopeSensor,
-            rotationVectorSensor,
-            proximitySensor,
-            ambientLightSensor
+            rotationVectorSensor
         ).filterNotNull().forEach { sensor ->
             sensorManager.registerListener(this, sensor, SensorManager.SENSOR_DELAY_NORMAL)
         }
@@ -241,13 +232,11 @@ class MainActivity : ComponentActivity(), SensorEventListener2 {
     override fun onSensorChanged(event: SensorEvent?) {
         event?.let {
             when (it.sensor.type) {
-                Sensor.TYPE_GRAVITY -> gravityData = it.values.clone()
-                Sensor.TYPE_MAGNETIC_FIELD_UNCALIBRATED -> magnetometerData = it.values.clone()
-                Sensor.TYPE_LINEAR_ACCELERATION -> linearAccelData = it.values.clone()
-                Sensor.TYPE_GYROSCOPE -> gyroscopeData = it.values.clone()
-                Sensor.TYPE_ROTATION_VECTOR -> rotationVectorData = it.values.clone()
-                Sensor.TYPE_PROXIMITY -> proximityData = it.values[0]
-                Sensor.TYPE_LIGHT -> ambientLightData = it.values[0]
+                Sensor.TYPE_GRAVITY -> gravityZ = it.values.getOrElse(2) { 0f }
+                Sensor.TYPE_MAGNETIC_FIELD_UNCALIBRATED -> magnetometerZ = it.values.getOrElse(2) { 0f }
+                Sensor.TYPE_LINEAR_ACCELERATION -> linearAccelZ = it.values.getOrElse(2) { 0f }
+                Sensor.TYPE_GYROSCOPE -> gyroscopeZ = it.values.getOrElse(2) { 0f }
+                Sensor.TYPE_ROTATION_VECTOR -> rotationVectorZ = it.values.getOrElse(2) { 0f }
             }
 
             // Perform sensor fusion when all data is available
@@ -258,35 +247,35 @@ class MainActivity : ComponentActivity(), SensorEventListener2 {
     }
 
     private fun isAllDataAvailable(): Boolean {
-        // Basic check to ensure data arrays are initialized
-        return gravityData.isNotEmpty() &&
-                magnetometerData.isNotEmpty() &&
-                linearAccelData.isNotEmpty() &&
-                gyroscopeData.isNotEmpty() &&
-                rotationVectorData.isNotEmpty()
+        // Basic check to ensure all z-values are initialized
+        return gravityZ != 0f &&
+                magnetometerZ != 0f &&
+                linearAccelZ != 0f &&
+                gyroscopeZ != 0f &&
+                rotationVectorZ != 0f
     }
 
     private fun fuseSensorData() {
-        // Multiply corresponding values
-        val fusedX = gravityData[0] * magnetometerData[0] * linearAccelData[0] * gyroscopeData[0] * rotationVectorData[0]
-        val fusedY = gravityData[1] * magnetometerData[1] * linearAccelData[1] * gyroscopeData[1] * rotationVectorData[1]
-        val fusedZ = gravityData[2] * magnetometerData[2] * linearAccelData[2] * gyroscopeData[2] * rotationVectorData[2]
+        // Define sensor pairings for RGB
+        val r = gravityZ * magnetometerZ
+        val g = linearAccelZ * gyroscopeZ
+        val b = rotationVectorZ * gravityZ // Using gravityZ again for pairing
 
-        // Normalize the fused values to 0-255 for RGB
-        val normalizedX = normalizeValue(fusedX)
-        val normalizedY = normalizeValue(fusedY)
-        val normalizedZ = normalizeValue(fusedZ)
+        // Normalize each component to 0-255
+        val normalizedR = normalizeValue(r)
+        val normalizedG = normalizeValue(g)
+        val normalizedB = normalizeValue(b)
 
-        // Create the RGB color
-        val color = android.graphics.Color.rgb(normalizedX, normalizedY, normalizedZ)
+        // Create the RGB color with full opacity
+        val color = AndroidColor.rgb(normalizedR, normalizedG, normalizedB)
 
         // Update the state variable for background color
         currentPhotoColor = ComposeColor(color)
     }
 
     private fun normalizeValue(value: Float): Int {
-        // Simple normalization logic. Adjust based on expected sensor value ranges.
-        // Prevent division by zero and handle extreme values
+        // Simple normalization logic based on expected sensor value ranges.
+        // Adjust minValue and maxValue as per your sensor's specifications.
         return try {
             val minValue = -1000f // Example min value, adjust as needed
             val maxValue = 1000f  // Example max value, adjust as needed
@@ -393,10 +382,6 @@ class MainActivity : ComponentActivity(), SensorEventListener2 {
                 withContext(Dispatchers.Main) {
                     cameraLauncher.launch(uri)
                 }
-            } ?: run {
-                withContext(Dispatchers.Main) {
-                    Toast.makeText(this@MainActivity, "Failed to create image Uri.", Toast.LENGTH_SHORT).show()
-                }
             }
         }
     }
@@ -419,7 +404,7 @@ class MainActivity : ComponentActivity(), SensorEventListener2 {
         }
     }
 
-    // Function to load bitmap from Uri
+    // Function to load bitmap from Uri with proper resource management
     private fun loadBitmapFromUri(context: Context, uri: Uri): Bitmap? {
         return try {
             context.contentResolver.openInputStream(uri)?.use { inputStream ->
@@ -431,25 +416,41 @@ class MainActivity : ComponentActivity(), SensorEventListener2 {
         }
     }
 
-    // Function to map z-axis to color
-    private fun mapZAxisToColor(zValue: Float): Int {
-        // Example mapping: blue to red based on zValue
-        // Adjust the mapping logic as per your requirements
-        val normalizedZ = ((zValue + 100f) / 200f).coerceIn(0f, 1f) // Normalize to [0,1]
-        val red = (normalizedZ * 255).toInt()
-        val blue = ((1f - normalizedZ) * 255).toInt()
-        return android.graphics.Color.rgb(red, 0, blue)
+    // Function to map z-axis to color based on sensor pairings
+    private fun mapZAxisToColor(): Int {
+        // Pairings:
+        // R = GravityZ * MagnetometerZ
+        // G = LinearAccelZ * GyroscopeZ
+        // B = RotationVectorZ * GravityZ
+
+        val r = gravityZ * magnetometerZ
+        val g = linearAccelZ * gyroscopeZ
+        val b = rotationVectorZ * gravityZ
+
+        // Normalize each component to 0-255
+        val normalizedR = normalizeValue(r)
+        val normalizedG = normalizeValue(g)
+        val normalizedB = normalizeValue(b)
+
+        // Create the RGB color with full opacity
+        return AndroidColor.rgb(normalizedR, normalizedG, normalizedB)
     }
 
-    // Function to colorize the bitmap
-    private fun colorizeBitmap(originalBitmap: Bitmap, color: android.graphics.Color): Bitmap {
-        val bitmap = originalBitmap.copy(Bitmap.Config.ARGB_8888, true)
-        val canvas = android.graphics.Canvas(bitmap)
-        val paint = android.graphics.Paint()
-        val colorFilter = android.graphics.PorterDuffColorFilter(color.toArgb(), android.graphics.PorterDuff.Mode.SRC_ATOP)
-        paint.colorFilter = colorFilter
-        canvas.drawBitmap(bitmap, 0f, 0f, paint)
-        return bitmap
+    // Function to colorize the bitmap with a semi-transparent color overlay
+    private fun colorizeBitmap(originalBitmap: Bitmap, color: Int): Bitmap {
+        // Create a mutable copy of the original bitmap
+        val mutableBitmap = originalBitmap.copy(Bitmap.Config.ARGB_8888, true)
+        val canvas = Canvas(mutableBitmap)
+        val paint = AndroidPaint()
+
+        // Set the color with desired alpha for transparency
+        paint.color = color
+        paint.alpha = 100f.toInt() // Adjust alpha as needed (0-255)
+
+        // Draw a semi-transparent rectangle over the entire image
+        canvas.drawRect(0f, 0f, canvas.width.toFloat(), canvas.height.toFloat(), paint)
+
+        return mutableBitmap
     }
 
     // Function to save bitmap to Uri
@@ -526,4 +527,3 @@ fun loadBitmapFromUri(context: Context, uri: Uri): Bitmap? {
         null
     }
 }
-
